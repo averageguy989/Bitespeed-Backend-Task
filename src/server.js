@@ -14,16 +14,43 @@ app.use(express.json());
 
 app.post("/identify", async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { email, phoneNumber } = req.body;
+
+    if(!email && !phoneNumber){
+        return res.status(400).json({
+            message: "email or phone required"
+        })
+    }
+
 
     const contacts = await prisma.contact.findMany({
       where: {
         OR: [
-          { email: email },
-          { phoneNumber: phone }
+          { email },
+          { phoneNumber }
         ]
       }
     });
+
+    if(contacts.length === 0){
+        const newContact = await prisma.contact.create({
+            data: {
+                email,
+                phoneNumber,
+                linkPrecedence: "primary",
+                linkedId: null
+            }
+        })
+
+        return res.status(201).json({
+            contact: {
+                primaryContactId: newContact.id,
+                emails: [email],
+                phoneNumbers: [phoneNumber],
+                secondaryContactIds: []
+            }
+        })
+    }
 
     return res.json({
       success: true,
