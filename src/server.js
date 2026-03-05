@@ -80,6 +80,54 @@ app.post("/identify", async (req, res) => {
             })
         }
 
+        const primaryIds = new Set()
+
+        for (const contact of contacts) {
+            if (contact.linkPrecedence === "primary") {
+                primaryIds.add(contact.id)
+            } else {
+                primaryIds.add(contact.linkedId)
+            }
+        }
+
+        const primaries = await prisma.contact.findMany({
+            where: {
+                id: { in: [...primaryIds] }
+            },
+            orderBy: {
+                createdAt: "asc"
+            }
+        })
+
+        const oldestPrimary = primaries[0]
+
+        if(primaries.length > 1){
+            for (let i = 1; i < primaries.length; i++) {
+
+                const otherPrimary = primaries[i]
+
+                await prisma.contact.update({
+                    where: { id: otherPrimary.id },
+                    data: {
+                    linkPrecedence: "secondary",
+                    linkedId: oldestPrimary.id
+                    }
+                })
+            }
+
+            await prisma.contact.updateMany({
+                where: {
+                    linkedId: { in: primaries.slice(1).map(p => p.id) }
+                },
+                data: {
+                    linkedId: oldestPrimary.id
+                }
+            })
+        }
+
+
+        primaryContact = oldestPrimary
+
         const userContacts = await prisma.contact.findMany({
             where: {
                 OR: [
@@ -121,11 +169,6 @@ app.post("/identify", async (req, res) => {
             }
         })
     }
-
-    return res.json({
-      success: true,
-      contacts: contacts
-    });
 
   } catch (err) {
     console.log("server error", err);
