@@ -32,6 +32,7 @@ app.post("/identify", async (req, res) => {
       }
     });
 
+
     if(contacts.length === 0){
         const newContact = await prisma.contact.create({
             data: {
@@ -48,6 +49,75 @@ app.post("/identify", async (req, res) => {
                 emails: [email],
                 phoneNumbers: [phoneNumber],
                 secondaryContactIds: []
+            }
+        })
+    }else {
+
+        let primaryContact = contacts.find(
+            (contact) => contact.linkPrecedence === "primary"
+        )
+
+        if(!primaryContact){
+            const secondary = contacts[0];
+            primaryContact = await prisma.contact.findUnique({
+                where: {
+                    id: secondary.linkedId
+                }
+            })
+        }
+
+        const emailExists = contacts.some(c => c.email === email)
+        const phoneExists = contacts.some(c => c.phoneNumber === phoneNumber)
+
+        if(!emailExists || !phoneExists){
+            const secondaryContact = await prisma.contact.create({
+                data: {
+                    email,
+                    phoneNumber,
+                    linkPrecedence: "secondary",
+                    linkedId: primaryContact.id
+                }
+            })
+        }
+
+        const userContacts = await prisma.contact.findMany({
+            where: {
+                OR: [
+                    {id: primaryContact.id},
+                    {linkedId: primaryContact.id}
+                ]
+            },
+            orderBy: {
+                createdAt: "asc"
+            }
+        })
+
+        const emailSet = new Set();
+
+        userContacts.forEach( c => {
+            if(c.email) emailSet.add(c.email);
+        })
+
+        const phoneNumberSet = new Set();
+
+        userContacts.forEach( c => {
+            if(c.phoneNumber) phoneNumberSet.add(c.phoneNumber);
+        })
+
+        const allEmails = [...emailSet];
+        const allPhoneNumbers = [...phoneNumberSet];
+
+        const secondaryContactIds = userContacts
+            .filter(c => c.linkPrecedence === 'secondary')
+            .map(c => c.id)
+
+
+        return res.status(200).json({
+            contact: {
+                primaryContactId: primaryContact.id,
+                emails: allEmails,
+                phoneNumbers: allPhoneNumbers,
+                secondaryContactIds
             }
         })
     }
