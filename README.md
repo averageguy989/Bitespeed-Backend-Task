@@ -103,7 +103,15 @@ Result:    secondary contact created, linked to primary
 ```
 
 ### 4. Merging Two Primary Contacts
-If a new request connects two previously separate identities, the older contact remains **primary** and the newer one becomes **secondary**. All linked contacts are re-pointed to the oldest primary.
+If a new request connects two previously separate identities, the older contact remains **primary** and the newer one becomes **secondary**. All of the newer primary's existing secondary contacts are **cascadingly re-linked** to the oldest primary in a single operation.
+
+```
+Before:  Primary A (id: 11) ← Secondary A1, A2
+         Primary B (id: 27) ← Secondary B1
+
+Request links A and B:
+After:   Primary A (id: 11) ← Secondary A1, A2, B (demoted), B1 (re-linked)
+```
 
 ---
 
@@ -190,6 +198,7 @@ curl -X POST https://bitespeed-backend-task-aifq.onrender.com/identify \
 - New phone with existing email
 - Duplicate request handling
 - Merging two primary contacts
+- Cascading re-linking of all secondaries when two primaries merge
 
 ---
 
