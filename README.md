@@ -115,6 +115,42 @@ After:   Primary A (id: 11) ← Secondary A1, A2, B (demoted), B1 (re-linked)
 
 ---
 
+## Flow Diagram
+
+```
+POST /identify
+      │
+      ▼
+┌─────────────────────────┐
+│ Both email & phone null? │──── YES ──► 400 Bad Request
+└─────────────────────────┘
+      │ NO
+      ▼
+┌──────────────────────────────┐
+│ Any matching contact exists? │──── NO ──► Create new PRIMARY contact
+└──────────────────────────────┘               └─► Return consolidated response
+      │ YES
+      ▼
+┌───────────────────────────────────┐
+│ Is ALL provided info already known│
+│ (no new email or phone)?          │──── YES ──► Return existing consolidated response
+└───────────────────────────────────┘
+      │ NO (new info present)
+      ▼
+┌──────────────────────────────────────┐
+│ Do matches belong to 2 separate      │
+│ primary contacts?                    │──── YES ──► Demote newer primary to SECONDARY
+└──────────────────────────────────────┘             Cascade re-link all its secondaries
+      │ NO                                           └─► Return consolidated response
+      ▼
+Create new SECONDARY contact linked to primary
+      │
+      ▼
+Return consolidated response
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -202,19 +238,34 @@ curl -X POST https://bitespeed-backend-task-aifq.onrender.com/identify \
 
 ---
 
+## Error Handling
+
+| Scenario | HTTP Status | Response |
+|---|---|---|
+| Both `email` and `phoneNumber` are null/missing | `400` | `{ "error": "At least one of email or phoneNumber must be provided" }` |
+| Invalid JSON body | `400` | `{ "error": "Invalid request body" }` |
+| Database unreachable | `500` | `{ "error": "Internal server error" }` |
+
+All successful requests — whether they create a new contact, link existing ones, or simply look up — return `200` with the consolidated contact payload.
+
+---
+
 ## Known Limitation
 
-When a primary contact is created with **only an email**, a subsequent request with the **same email and a phone number** will create a secondary contact rather than updating the primary's missing phone number.
+The task specification does not explicitly define behavior when a primary contact was created with only one identifier (e.g., just an email) and a subsequent request provides the **same identifier plus a new one** (e.g., same email + a phone number).
+
+The current implementation follows a conservative approach: any new information triggers a **secondary contact** creation rather than mutating the existing primary. This keeps the primary record immutable post-creation, which avoids unintended data overwrites.
 
 ```
 Request 1: { "email": "a@gmail.com" }
-→ Primary contact created (no phone)
+→ Primary contact created (phone: null)
 
 Request 2: { "email": "a@gmail.com", "phoneNumber": "123" }
-→ Secondary contact created (instead of updating primary)
+→ Secondary contact created and linked to primary
+  (rather than patching the primary's null phone field)
 ```
 
-Updating the primary contact with new missing fields is a planned improvement for a future iteration.
+**Proposed improvement:** If the incoming request introduces exactly one new field and the matching contact has `null` for that field, patch the primary directly instead of creating a secondary. This would reduce unnecessary contact rows for the same identity.
 
 ---
 
